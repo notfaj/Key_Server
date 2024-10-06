@@ -81,30 +81,25 @@ def generate_key(expiration_days, machine_limit, product_id):
     }
 
 
-def log_request(action, key=None, machine_id=None, username=None, product_id=None, log_level="INFO"):
+def log_request(
+    action, key=None, machine_id=None, username=None, product_id=None, log_level="INFO"
+):
     # Get the client's IP address
     client_ip = (
         request.headers.get("X-Forwarded-For", request.remote_addr)
         .split(",")[0]
         .strip()
     )
-    
+
     # Create a log entry
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "level": log_level,
-        "client": {
-            "ip_address": client_ip,
-            "username": username
-        },
+        "client": {"ip_address": client_ip, "username": username},
         "action": action,
-        "details": {
-            "key": key,
-            "product_id": product_id,
-            "machine_id": machine_id
-        },
+        "details": {"key": key, "product_id": product_id, "machine_id": machine_id},
     }
-    
+
     # Ensure the log file exists and load existing logs
     if os.path.exists(LOGS_FILE):
         with open(LOGS_FILE, "r") as log_file:
@@ -121,6 +116,3 @@ def log_request(action, key=None, machine_id=None, username=None, product_id=Non
     # Write the updated logs back to the file
     with open(LOGS_FILE, "w") as log_file:
         json.dump(logs, log_file, indent=4)  # Write the logs as formatted JSON
-
-
-
