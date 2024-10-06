@@ -2,7 +2,11 @@ import unittest
 import json
 import os
 import base64
-from app import app
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from keyserver import app
+from keyserver.utils import KEYS_FILE, ABS_PATH, lock
 
 
 class KeyManagementTest(unittest.TestCase):
@@ -15,14 +19,27 @@ class KeyManagementTest(unittest.TestCase):
         self.billing_auth = ("billing", os.getenv("BILLING_PASSWORD"))
         self.test_product_id = "test_product"
 
+        # Create a test file in the directory if it does not exist
+        self.test_file_path = os.path.join(
+            ABS_PATH, ".well-known", "pki-validation", "test_file.txt"
+        )
+        os.makedirs(os.path.dirname(self.test_file_path), exist_ok=True)
+        with open(self.test_file_path, "w") as test_file:
+            test_file.write("This is a test file for validation.")
+
     def tearDown(self):
         """Cleanup created keys for the test product."""
         self.cleanup_keys()
+        # Attempt to remove the test file
+        try:
+            os.remove(self.test_file_path)
+        except PermissionError as e:
+            print(f"PermissionError: {e}")
 
     def cleanup_keys(self):
         """Remove keys associated with the test product from keys.json."""
-        if os.path.exists("keys.json"):
-            with open("keys.json", "r") as f:
+        if os.path.exists(KEYS_FILE):
+            with open(KEYS_FILE, "r") as f:
                 keys_data = json.load(f)
                 valid_keys = keys_data["valid_keys"]
 
@@ -34,7 +51,7 @@ class KeyManagementTest(unittest.TestCase):
             ]
 
             # Write back the updated keys
-            with open("keys.json", "w") as f:
+            with open(KEYS_FILE, "w") as f:
                 json.dump({"valid_keys": updated_keys}, f, indent=4)
 
     def test_create_key(self):
@@ -225,6 +242,15 @@ class KeyManagementTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         data = json.loads(response.data.decode())
         self.assertEqual(data["status"], "forbidden")
+
+    def test_serve_auth_file(self):
+        """Test serving files from the .well-known/pki-validation directory."""
+        # Send a GET request to the serve_auth_file endpoint
+        response = self.app.get("/.well-known/pki-validation/test_file.txt")
+
+        # Assert the response status code and data
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.decode(), "This is a test file for validation.")
 
 
 if __name__ == "__main__":

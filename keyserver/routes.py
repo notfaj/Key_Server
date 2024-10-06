@@ -4,42 +4,29 @@ from flask import (
     jsonify,
     request,
     send_file,
-    send_from_directory,
-    render_template_string,
 )
-from utils import log_request, load_keys, save_keys, generate_key
-from auth import USERS, check_auth
+from .utils import log_request, load_keys, save_keys, generate_key, serve_file
+from .auth import USERS, check_auth
+from .utils import KEYS_FILE, LOGS_FILE, ABS_PATH
 import os
 
 bp = Blueprint("main", __name__)
 
 
-@bp.route("/", methods=["GET"])
-def home():
-    html_content = """
-    <html>
-    <head><title>Key Server</title></head>
-    <body>
-        <h1>Welcome to the Key Server</h1>
-        <p>This is an open-source key server that allows users to generate and validate product keys with machine restrictions.</p>
-        <p>Features:</p>
-        <ul>
-            <li>Generate product keys with expiration dates</li>
-            <li>Limit the number of machines per key</li>
-            <li>Track and validate keys</li>
-        </ul>
-        <p>Check out the API documentation for details on how to use this server.</p>
-    </body>
-    </html>
-    """
-    return render_template_string(html_content)
-
-
 # Serve files from the '.well-known' directory
 @bp.route("/.well-known/pki-validation/<path:filename>", methods=["GET"])
 def serve_auth_file(filename):
-    directory = os.path.join(os.getcwd(), ".well-known/pki-validation")
-    return send_from_directory(directory, filename)
+    """Serve files from the '.well-known/pki-validation' directory."""
+    directory = os.path.join(ABS_PATH, ".well-known", "pki-validation")
+    return serve_file(directory, filename)
+
+
+# Endpoint for hosting downloads
+@bp.route("/downloads/<path:filename>", methods=["GET"])
+def download_file(filename):
+    """Serve downloadable files from the 'downloads' directory."""
+    directory = os.path.join(ABS_PATH, "downloads")
+    return serve_file(directory, filename, as_attachment=True)
 
 
 # Endpoint for generating a key
@@ -241,10 +228,10 @@ def get_request_logs():
             403,
         )
 
-    if os.path.exists("request_logs.json"):
+    if os.path.exists(LOGS_FILE):
         log_request(action="retrieve_request_logs", username=username)
 
-        return send_file("request_logs.json", as_attachment=True)
+        return send_file(LOGS_FILE, as_attachment=True)
     else:
         return (
             jsonify({"status": "error", "message": "Request log file not found."}),
@@ -277,9 +264,9 @@ def get_keys_file():
             403,
         )
 
-    if os.path.exists("keys.json"):
+    if os.path.exists(KEYS_FILE):
         log_request(action="retrieve_keys_file", username=username)
-        return send_file("keys.json", as_attachment=True)
+        return send_file(KEYS_FILE, as_attachment=True)
     else:
         return jsonify({"status": "error", "message": "Keys file not found."}), 404
 
