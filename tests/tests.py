@@ -6,7 +6,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from keyserver import app
-from keyserver.utils import KEYS_FILE, ABS_PATH, lock
+from keyserver.utils import KEYS_FILE, ABS_PATH
 
 
 class KeyManagementTest(unittest.TestCase):
