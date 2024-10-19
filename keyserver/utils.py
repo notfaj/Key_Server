@@ -66,17 +66,14 @@ def remove_expired_keys(keys):
 
 def generate_key(expiration_days, machine_limit, product_id):
     key = str(uuid.uuid4())
-    expiration_date = (
-        None
-        if expiration_days == 0
-        else (datetime.now() + timedelta(days=expiration_days)).isoformat()
-    )
+
     return {
         "key": key,
         "product_id": product_id,
         "machine_ids": [],
         "activated": False,
-        "expiration_date": expiration_date,
+        "expiration_days": expiration_days,  # Track expiration days
+        "expiration_date": None,  # Initially set to None
         "machine_limit": machine_limit,
     }
 

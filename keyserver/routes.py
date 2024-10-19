@@ -1,10 +1,5 @@
 from datetime import datetime, timedelta
-from flask import (
-    Blueprint,
-    jsonify,
-    request,
-    send_file,
-)
+from flask import Blueprint, jsonify, request, send_file, Flask
 from .utils import log_request, load_keys, save_keys, generate_key, serve_file
 from .auth import USERS, check_auth
 from .utils import KEYS_FILE, LOGS_FILE, ABS_PATH
@@ -26,7 +21,11 @@ def serve_auth_file(filename):
 def download_file(filename):
     """Serve downloadable files from the 'downloads' directory."""
     directory = os.path.join(ABS_PATH, "downloads")
-    return serve_file(directory, filename, as_attachment=True)
+
+    # Check for the 'attachment' query parameter
+    as_attachment = request.args.get("attachment", "true").lower() == "true"
+
+    return serve_file(directory, filename, as_attachment=as_attachment)
 
 
 # Endpoint for generating a key
@@ -39,11 +38,15 @@ def generate_key_route():
             401,
         )
 
-    data = request.json
-    expiration_days = data.get("expiration_days", 0)
-    machine_limit = data.get("machine_limit", 1)
-    product_id = data.get("product_id")
+    # Extract parameters from the query string using request.args
+    expiration_days = request.args.get("expiration_days", default=0, type=int)
+    machine_limit = request.args.get("machine_limit", default=1, type=int)
+    product_id = request.args.get("product_id")
 
+    if not product_id:  # Ensure product_id is provided
+        return jsonify({"status": "error", "message": "product_id is required."}), 400
+
+    # Generate the new key using the extracted parameters
     new_key = generate_key(expiration_days, machine_limit, product_id)
     keys = load_keys()
     keys.append(new_key)
@@ -52,13 +55,7 @@ def generate_key_route():
     log_request(action="generate_key", key=new_key["key"], username=user["role"])
 
     return (
-        jsonify(
-            {
-                "status": "success",
-                "key": new_key["key"],
-                "expiration_date": new_key["expiration_date"],
-            }
-        ),
+        jsonify({"status": "success", "key": new_key["key"]}),
         201,
     )
 
@@ -66,7 +63,7 @@ def generate_key_route():
 # Endpoint for activating or validating a key
 @bp.route("/key", methods=["POST"])
 def activate_or_validate_key():
-    data = request.json
+    data = request.args  # Change to get data from args
     key = data.get("key")
     machine_id = data.get("machine_id")
 
@@ -75,6 +72,7 @@ def activate_or_validate_key():
 
     for entry in keys:
         if entry["key"] == key:
+            # Check if the key has expired
             if entry["expiration_date"] and current_time > entry["expiration_date"]:
                 log_request(action="key_expired", key=key, machine_id=machine_id)
                 return (
@@ -111,8 +109,16 @@ def activate_or_validate_key():
                     400,
                 )
 
+            # Key activation logic
             entry["machine_ids"].append(machine_id)
             entry["activated"] = True
+
+            # Set the expiration date based on the stored expiration_days
+            if entry["expiration_days"] > 0:
+                entry["expiration_date"] = (
+                    datetime.now() + timedelta(days=entry["expiration_days"])
+                ).isoformat()
+
             save_keys(keys)
 
             log_request(action="activate_key", key=key, machine_id=machine_id)
@@ -125,6 +131,9 @@ def activate_or_validate_key():
                         "product_id": entry[
                             "product_id"
                         ],  # Include product_id in the response
+                        "expiration_date": entry[
+                            "expiration_date"
+                        ],  # Return the new expiration date
                     }
                 ),
                 200,
@@ -380,3 +389,48 @@ def edit_key_info():
             )
 
     return jsonify({"status": "error", "message": "Key not found."}), 404
+
+
+@bp.route("/delete-key", methods=["DELETE"])
+def delete_key():
+    # Check admin authorization
+    user = check_auth()
+    if not user:
+        return (
+            jsonify({"status": "unauthorized", "message": "Invalid credentials."}),
+            401,
+        )
+
+    auth = request.authorization
+    username = auth.username
+    user_role = user["role"]
+
+    if user_role != "admin":
+        return (
+            jsonify(
+                {
+                    "status": "forbidden",
+                    "message": "User is not authorized to delete keys.",
+                }
+            ),
+            403,
+        )
+
+    key = request.args.get("key")
+
+    if not key:
+        return jsonify({"status": "error", "message": "Key parameter is missing"}), 400
+
+    keys = load_keys()
+
+    log_request(action="delete_key", key=key, username=username)
+    for entry in keys:
+        if entry["key"] == key:
+            keys.remove(entry)
+            save_keys(keys)
+            return (
+                jsonify({"status": "success", "message": "Key deleted successfully"}),
+                200,
+            )
+
+    return jsonify({"status": "error", "message": "Key not found"}), 404
